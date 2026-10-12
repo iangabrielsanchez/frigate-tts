@@ -1,0 +1,36 @@
+services:
+  frigate-tts:
+    build: .
+    container_name: frigate-tts
+    restart: unless-stopped
+    user: "1000:100"  # owner of the sounds dir on the host
+    ports:
+      - "5005:5005"
+    volumes:
+      - /home/ian/sounds:/sounds
+      - ./voices:/app/voices  # drop extra Piper voice models (.onnx + .onnx.json) here
+      - ./data:/data          # settings.json, survives rebuilds
+    networks:
+      - frigate
+
+  https-proxy:
+    image: caddy:2-alpine
+    container_name: frigate-tts-https
+    restart: unless-stopped
+    depends_on:
+      - frigate-tts
+    ports:
+      - "8444:8444"  # https://<host>:8444 - needed for the mic buttons off localhost
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    networks:
+      - frigate
+
+networks:
+  frigate:
+    name: frigate_default  # frigate's compose network, so "frigate" resolves
+    external: true
+
+volumes:
+  caddy_data:

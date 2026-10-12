@@ -1,0 +1,6 @@
+node_modules/
+dist/
+voices/*.onnx
+voices/*.onnx.json
+*.wav
+data/

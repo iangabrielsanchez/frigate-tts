@@ -1,0 +1,11 @@
+{
+	on_demand_tls {
+		ask http://frigate-tts:5005/caddy-ask
+	}
+}
+:8444 {
+	tls internal {
+		on_demand
+	}
+	reverse_proxy frigate-tts:5005
+}

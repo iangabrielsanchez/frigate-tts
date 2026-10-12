@@ -1,0 +1,14 @@
+{
+  "name": "frigate-tts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

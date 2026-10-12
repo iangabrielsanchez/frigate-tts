@@ -1,0 +1,98 @@
+# Camera Speaker
+
+A tiny web app: type text, or hold a button and talk, and it plays through a CCTV camera's speaker via [Frigate](https://frigate.video)'s built-in go2rtc two-way audio.
+
+Text -> [Piper](https://github.com/rhasspy/piper) TTS (offline) -> `/sounds/tts.wav` -> go2rtc `POST /api/streams?dst=<cam>&src=ffmpeg:/sounds/tts.wav#audio=pcma#input=file`
+
+## Requirements
+
+- Frigate running in Docker, with a host dir mounted at `/sounds`
+- Cameras with two-way audio (backchannel) configured in [go2rtc](https://docs.frigate.video/configuration/go2rtc) (see also [two-way talk](https://docs.frigate.video/configuration/live#two-way-talk))
+- Docker with Compose
+
+## Setup
+
+```sh
+mkdir -p data voices
+docker compose up -d --build   # http://<host>:5005
+```
+
+Everything else (cameras, the go2rtc URL, voice, padding, history, push-to-talk mode, and an optional login) is configured from the Settings page (the gear icon on the main page) instead of environment variables, and is saved to `data/settings.json`, which survives rebuilds.
+
+If `compose.yml`'s `networks.frigate.name` doesn't match Frigate's compose project name, change it so `http://frigate:1984` resolves (usually `<frigate-folder-name>_default`).
+
+## Main page
+
+- Type a message, or tap a quick reply (configured in Settings) to send it immediately.
+- Preview plays the message in your browser, with the same padding it would get on a camera, no camera involved.
+- Hold to talk records (or live-streams, depending on the push-to-talk mode in Settings) your voice to the camera.
+- Soundboard plays any audio file already sitting in your sounds folder (e.g. a pre-made MP3), unmodified.
+
+## Settings page
+
+- Cameras and connection: go2rtc URL, with a "Test connection" button that also lists the stream names go2rtc knows about. A rate limit here caps how many camera messages (of any kind) can go out per minute, as a leaky bucket; short bursts are fine, sustained spam isn't.
+- Voice: pick from installed voices, or expand "Browse more voices" to search Piper's full catalog (free, no account needed) and download one on demand. Leading/trailing silence (padding) is also set here, along with a "Preview" box that plays in your browser only, never through a camera.
+- Quick replies: canned phrases, one per line, shown as buttons on the main page that send immediately when clicked.
+- History: show/hide the quick-reuse buttons on the main page; clicking one fills the message box rather than sending it immediately.
+- Push to talk, two modes:
+  - Record, then send (default): waits until you release the button, so the clip gets the full leading/trailing silence. Clearest audio.
+  - Live: streams ~0.7s segments to the camera while you hold the button, so it starts playing within about a second, closer to a real PTT radio, but the first word can clip and there can be small gaps between segments.
+- Login (Basic Auth): off by default. Set a username and password to require them for every page.
+
+## Mic access over HTTPS
+
+Browsers block microphone access on plain HTTP (except on `localhost`), so the hold-to-talk buttons won't work if you open this over plain `http://<lan-ip>:5005`. `compose.yml` includes a small [Caddy](https://caddyserver.com) sidecar that serves the same app over HTTPS on port `8444`, with a self-signed certificate it issues on the fly for whatever hostname or IP you connect with:
+
+```
+https://<host>:8444
+```
+
+Your browser will warn about the self-signed cert the first time; that's expected, accept it once per device. (If you already reach this over Tailscale or another HTTPS tunnel, you don't need this proxy.)
+
+## How it's built
+
+Node.js and TypeScript, no web framework, using the built-in `http` module. Speech comes from [Piper's](https://github.com/rhasspy/piper) standalone CLI binary (downloaded for your architecture at image build time), piped through `ffmpeg` for the leading/trailing silence. The same approach pads a recorded clip. Live push-to-talk feeds audio into a named pipe that go2rtc reads from continuously while the button is held.
+
+```
+src/
+  config.ts   settings persistence, auth, rate limiting, sound listing
+  piper.ts    voice catalog/download, synthesis, go2rtc calls
+  live.ts     the named-pipe push-to-talk session
+  pages.ts    the two pages' HTML/CSS/JS
+  server.ts   HTTP routing
+```
+
+## Configuration (env vars)
+
+Only deployment-level paths are env-controlled; everything else is in Settings.
+
+| Env var | Default | |
+|---|---|---|
+| `SOUNDS_DIR` | `/sounds` | where this app writes audio |
+| `FRIGATE_SOUNDS_DIR` | `/sounds` | the same dir, as seen inside Frigate |
+| `VOICES_DIR` | `/app/voices` in the container | installed Piper voices |
+| `SETTINGS_PATH` | `/data/settings.json` in the container | where settings are saved |
+| `PORT` | `5005` | |
+
+## Running without Docker
+
+Needs Node.js 22+, `ffmpeg`, and a [Piper release binary](https://github.com/rhasspy/piper/releases) for your platform on `PATH`.
+
+```sh
+npm install
+npm run build
+SOUNDS_DIR=~/sounds VOICES_DIR=./voices SETTINGS_PATH=./data/settings.json npm start
+```
+
+Then open the Settings page and point it at your go2rtc URL and cameras.
+
+## Notes
+
+- No authentication by default; until you set one up in Settings, anyone who can reach the port can talk through your cameras, and can change that setting themselves. Keep it on your LAN/VPN, or set a login.
+- A rate limit (Settings -> Cameras and connection, default 10/min) protects against a runaway script or an accidental loop; set it to 0 to disable.
+- Each typed/recorded message overwrites the same file; nothing accumulates. Live push-to-talk uses a temporary named pipe per session, cleaned up when you release the button (or after ~20s of inactivity if a session is abandoned).
+- The soundboard only ever plays files already in your sounds folder; there's no file upload, and filenames are matched against that folder's own listing, so there's no path-traversal surface.
+
+## License
+
+[MIT](LICENSE)
