@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node --env-file-if-exists=.env dist/server.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

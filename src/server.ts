@@ -95,7 +95,7 @@ async function handleSay(body: any): Promise<unknown> {
   const cams = resolveCameras(body.cam, s);
   checkRateLimit();
   const t0 = Date.now();
-  await synthesize(text, soundPath("tts.wav"), speed, s.voice, s.pad_seconds, s.tail_seconds);
+  await synthesize(text, soundPath("tts.wav"), speed, s.voice, s.pad_seconds, s.tail_seconds, s.play_chime);
   await Promise.all(cams.map((cam) => play(cam, "tts.wav", s.go2rtc_url)));
   return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10, cameras: cams };
 }
@@ -153,6 +153,7 @@ function handleSaveSettings(body: any): unknown {
   if (body.voice) s.voice = String(body.voice);
   if (body.pad_seconds !== undefined) s.pad_seconds = Math.max(0, Math.min(10, Number(body.pad_seconds)));
   if (body.tail_seconds !== undefined) s.tail_seconds = Math.max(0, Math.min(10, Number(body.tail_seconds)));
+  if (body.play_chime !== undefined) s.play_chime = Boolean(body.play_chime);
   if (body.show_history !== undefined) s.show_history = Boolean(body.show_history);
   if (body.ptt_mode === "record" || body.ptt_mode === "live") s.ptt_mode = body.ptt_mode;
   if (Array.isArray(body.presets)) {
@@ -195,10 +196,11 @@ async function handlePreview(body: any): Promise<{ data: Buffer }> {
   const speed = Math.min(Math.max(Number(body.speed ?? 1), 0.5), 2.0);
   const pad = Math.max(0, Math.min(10, Number(body.pad_seconds ?? s.pad_seconds)));
   const tail = Math.max(0, Math.min(10, Number(body.tail_seconds ?? s.tail_seconds)));
+  const chime = body.play_chime !== undefined ? Boolean(body.play_chime) : s.play_chime;
   if (!text) throw new Error("empty text");
   const tmp = join(tmpdir(), `preview-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
   try {
-    await synthesize(text, tmp, speed, voiceName, pad, tail);
+    await synthesize(text, tmp, speed, voiceName, pad, tail, chime);
     return { data: readFileSync(tmp) };
   } finally {
     try {

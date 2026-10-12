@@ -17,11 +17,13 @@ mkdir -p data voices
 docker compose up -d --build   # http://<host>:5005
 ```
 
-Everything else (cameras, the go2rtc URL, voice, padding, history, push-to-talk mode, and an optional login) is configured from the Settings page (the gear icon on the main page) instead of environment variables, and is saved to `data/settings.json`, which survives rebuilds.
+Everything else (cameras, the go2rtc URL, voice, padding, an announcement chime, history, push-to-talk mode, and an optional login) is configured from the Settings page (the gear icon on the main page) instead of environment variables, and is saved to `data/settings.json`, which survives rebuilds.
 
 If `compose.yml`'s `networks.frigate.name` doesn't match Frigate's compose project name, change it so `http://frigate:1984` resolves (usually `<frigate-folder-name>_default`).
 
 ## Main page
+
+![FrigateTTS main page](screenshot.png)
 
 - Type a message, or tap a quick reply (configured in Settings) to send it immediately.
 - With more than one camera configured, the camera picker also offers "All cameras", which broadcasts to every one of them at once (typed messages, hold-to-talk, and the soundboard all support this).
@@ -34,7 +36,7 @@ It's an installable PWA: "Add to Home Screen" (iOS Safari) or the install icon i
 ## Settings page
 
 - Cameras and connection: go2rtc URL, with a "Test connection" button that also lists the stream names go2rtc knows about. A rate limit here caps how many camera messages (of any kind) can go out per minute, as a leaky bucket; short bursts are fine, sustained spam isn't.
-- Voice: pick from installed voices, or expand "Browse more voices" to search Piper's full catalog (free, no account needed) and download one on demand. Leading/trailing silence (padding) is also set here, along with a "Preview" box that plays in your browser only, never through a camera.
+- Voice: pick from installed voices, or expand "Browse more voices" to search Piper's full catalog (free, no account needed) and download one on demand. Leading/trailing silence (padding) is also set here, along with a "Preview" box that plays in your browser only, never through a camera. "Play announcement chime" plays a supermarket-style two-tone chime before the message: leading silence, chime, half a second, then speech.
 - Quick replies: canned phrases, one per line, shown as buttons on the main page that send immediately when clicked.
 - History: show/hide the quick-reuse buttons on the main page; clicking one fills the message box rather than sending it immediately.
 - Push to talk, two modes:
@@ -89,27 +91,43 @@ src/
 
 ## Configuration (env vars)
 
-Only deployment-level paths are env-controlled; everything else is in Settings.
+`npm start` reads `.env` (via `--env-file-if-exists`), and `docker compose` reads the same file for the port/certificate variables in the section above.
 
 | Env var | Default | |
 |---|---|---|
 | `SOUNDS_DIR` | `/sounds` | where this app writes audio |
 | `FRIGATE_SOUNDS_DIR` | `/sounds` | the same dir, as seen inside Frigate |
-| `VOICES_DIR` | `/app/voices` in the container | installed Piper voices |
-| `SETTINGS_PATH` | `/data/settings.json` in the container | where settings are saved |
-| `PORT` | `5005` | |
+| `VOICES_DIR` | `/app/voices` | installed Piper voices |
+| `PUBLIC_DIR` | `/app/public` | static assets (icons, manifest) |
+| `SETTINGS_PATH` | `/data/settings.json` (or `./data/settings.json` outside Docker) | where settings are saved |
+| `PORT` | `5005` | HTTP port |
+| `GO2RTC_URL` | `http://frigate:1984` | first-run go2rtc URL; the Settings page owns it afterward |
 
 ## Running without Docker
 
-Needs Node.js 22+, `ffmpeg`, and a [Piper release binary](https://github.com/rhasspy/piper/releases) for your platform on `PATH`.
+Needs Node.js 22+ (`.nvmrc` pins 22.10), `ffmpeg`, and a [Piper release binary](https://github.com/rhasspy/piper/releases) for your platform on `PATH`.
 
 ```sh
 npm install
 npm run build
-SOUNDS_DIR=~/sounds VOICES_DIR=./voices SETTINGS_PATH=./data/settings.json npm start
+npm start
 ```
 
-Then open the Settings page and point it at your go2rtc URL and cameras.
+`npm start` loads `.env` automatically, so no inline env vars are needed. A local `.env` looks like:
+
+```sh
+SOUNDS_DIR=./sounds
+FRIGATE_SOUNDS_DIR=/sounds
+VOICES_DIR=./voices
+PUBLIC_DIR=./public
+SETTINGS_PATH=./data/settings.json
+PORT=5005
+GO2RTC_URL=http://192.168.0.6:1984
+```
+
+Then open the Settings page, check the go2rtc URL with "Test connection", and add your camera names.
+
+One catch when developing against a *remote* Frigate: `Say it` writes `tts.wav` locally and asks go2rtc (on the Frigate host) to play `/sounds/tts.wav`. Those only line up if `./sounds` on this machine and `/sounds` on the Frigate host are the same files — share/mount them, or run this app on the Frigate host. Preview and voice download work regardless.
 
 ## Notes
 

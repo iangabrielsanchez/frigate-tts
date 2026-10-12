@@ -308,6 +308,8 @@ audio{width:100%;margin-top:8px}
   <div><label>Trailing silence (s)</label><input id="tail_seconds" type="number" step="0.5" min="0" max="10"></div>
  </div>
  <div class="note">Leading silence gives the camera time to open its audio channel before speech starts, so the first word doesn't get clipped.</div>
+ <div class="check"><input id="play_chime" type="checkbox"><label for="play_chime" style="margin:0">Play announcement chime</label></div>
+ <div class="note">Plays a supermarket-style chime before the message: leading silence, chime, half a second, then speech.</div>
  <label>Try it</label>
  <div class="row"><input id="previewText" value="Testing one two three"><button class="ghost" id="preview" style="flex:0 0 auto">Preview</button></div>
  <div class="note">Plays in your browser only, not through a camera.</div>
@@ -361,6 +363,7 @@ async function load(){
  $('rate_limit_per_min').value=s.rate_limit_per_min;
  $('pad_seconds').value=s.pad_seconds;
  $('tail_seconds').value=s.tail_seconds;
+ $('play_chime').checked=s.play_chime;
  $('presets').value=(s.presets||[]).join('\\n');
  $('show_history').checked=s.show_history;
  $('auth_username').value=s.auth_username||'';
@@ -394,7 +397,7 @@ $('preview').onclick=async()=>{
  try{
   const r=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({text:$('previewText').value,voice:$('voice').value,
-     pad_seconds:+$('pad_seconds').value,tail_seconds:+$('tail_seconds').value})});
+     pad_seconds:+$('pad_seconds').value,tail_seconds:+$('tail_seconds').value,play_chime:$('play_chime').checked})});
   if(!r.ok){const j=await r.json();throw new Error(j.error)}
   const blob=await r.blob();
   $('previewAudio').src=URL.createObjectURL(blob);$('previewAudio').style.display='block';$('previewAudio').play();
@@ -454,6 +457,7 @@ async function saveSettings(){
   voice:$('voice').value,
   pad_seconds:+$('pad_seconds').value,
   tail_seconds:+$('tail_seconds').value,
+  play_chime:$('play_chime').checked,
   presets:$('presets').value.split('\\n').map(s=>s.trim()).filter(Boolean),
   show_history:$('show_history').checked,
   ptt_mode:document.querySelector('input[name=ptt_mode]:checked').value,

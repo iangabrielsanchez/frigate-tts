@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { FRIGATE_SOUNDS_DIR, VOICES_DIR } from "./config.js";
 
@@ -91,18 +92,60 @@ export async function synthesize(
   speed: number,
   voiceName: string,
   padSeconds: number,
-  tailSeconds: number
+  tailSeconds: number,
+  playChime = false
 ): Promise<void> {
   const modelPath = join(VOICES_DIR, voiceName + ".onnx");
   if (!existsSync(modelPath)) throw new Error(`unknown voice: ${voiceName}`);
   const rawWav = outPath + ".raw.wav";
   try {
     await run("piper", ["--model", modelPath, "--output_file", rawWav, "--length_scale", String(1 / speed)], Buffer.from(text));
-    const af = `adelay=${Math.round(padSeconds * 1000)}:all=1,apad=pad_dur=${tailSeconds}`;
-    await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", rawWav, "-af", af, "-ac", "1", outPath]);
+    const source = playChime ? await prependChime(rawWav, outPath) : rawWav;
+    try {
+      const af = `adelay=${Math.round(padSeconds * 1000)}:all=1,apad=pad_dur=${tailSeconds}`;
+      await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", source, "-af", af, "-ac", "1", outPath]);
+    } finally {
+      if (source !== rawWav) unlinkSync(source);
+    }
   } finally {
     if (existsSync(rawWav)) unlinkSync(rawWav);
   }
+}
+
+let chimePath: string | null = null;
+
+async function ensureChime(): Promise<string> {
+  if (chimePath) return chimePath;
+  const path = join(tmpdir(), "frigate-tts-chime.wav");
+  if (!existsSync(path)) {
+    // a two-tone "ding-dong", supermarket-PA style: E5 then C5, each with a quick fade to avoid clicks
+    await run("ffmpeg", [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", "sine=frequency=659.25:duration=0.5:sample_rate=22050",
+      "-f", "lavfi", "-i", "sine=frequency=523.25:duration=0.8:sample_rate=22050",
+      "-filter_complex",
+      "[0:a]afade=t=in:d=0.01,afade=t=out:st=0.35:d=0.15[a0];" +
+        "[1:a]afade=t=in:d=0.01,afade=t=out:st=0.55:d=0.25[a1];" +
+        "[a0][a1]concat=n=2:v=0:a=1,volume=0.7[out]",
+      "-map", "[out]",
+      "-ar", "22050", "-ac", "1",
+      path,
+    ]);
+  }
+  chimePath = path;
+  return chimePath;
+}
+
+// chime, then half a second of air, then the speech; the caller still applies the leading/trailing padding
+async function prependChime(ttsPath: string, outPath: string): Promise<string> {
+  const combined = outPath + ".chime.wav";
+  const af =
+    "[0:a]aformat=sample_rates=22050:channel_layouts=mono:sample_fmts=s16[ch];" +
+    "[1:a]aformat=sample_rates=22050:channel_layouts=mono:sample_fmts=s16[tts];" +
+    "anullsrc=r=22050:cl=mono,atrim=duration=0.5,asetpts=PTS-STARTPTS,aformat=sample_rates=22050:channel_layouts=mono:sample_fmts=s16[gap];" +
+    "[ch][gap][tts]concat=n=3:v=0:a=1[out]";
+  await run("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error", "-i", await ensureChime(), "-i", ttsPath, "-filter_complex", af, "-map", "[out]", combined]);
+  return combined;
 }
 
 export async function convertRecording(data: Buffer, outPath: string, padSeconds: number, tailSeconds: number): Promise<void> {

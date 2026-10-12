@@ -9,6 +9,7 @@ export interface Settings {
   voice: string;
   pad_seconds: number;
   tail_seconds: number;
+  play_chime: boolean;
   show_history: boolean;
   ptt_mode: "record" | "live";
   presets: string[];
@@ -31,10 +32,12 @@ export const SOUND_EXTENSIONS = [".mp3", ".wav", ".ogg", ".m4a", ".flac"];
 const DEFAULTS: Settings = {
   app_name: "FrigateTTS",
   cameras: ["cam1_hd"],
-  go2rtc_url: "http://frigate:1984",
+  // GO2RTC_URL is the first-run default only; the Settings page owns it after that
+  go2rtc_url: process.env.GO2RTC_URL ?? "http://frigate:1984",
   voice: "en_US-lessac-medium",
   pad_seconds: 3.0,
   tail_seconds: 1.0,
+  play_chime: false,
   show_history: true,
   ptt_mode: "record",
   presets: [
@@ -88,6 +91,7 @@ export function publicSettings() {
     voice: s.voice,
     pad_seconds: s.pad_seconds,
     tail_seconds: s.tail_seconds,
+    play_chime: s.play_chime,
     show_history: s.show_history,
     ptt_mode: s.ptt_mode,
     presets: s.presets,
