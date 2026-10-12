@@ -127,7 +127,7 @@ GO2RTC_URL=http://192.168.0.6:1984
 
 Then open the Settings page, check the go2rtc URL with "Test connection", and add your camera names.
 
-One catch when developing against a *remote* Frigate: `Say it` writes `tts.wav` locally and asks go2rtc (on the Frigate host) to play `/sounds/tts.wav`. Those only line up if `./sounds` on this machine and `/sounds` on the Frigate host are the same files — share/mount them, or run this app on the Frigate host. Preview and voice download work regardless.
+One catch when developing against a *remote* Frigate: `Say it` writes `tts.wav` locally and asks go2rtc (on the Frigate host) to play `/sounds/tts.wav`. Those only line up if `./sounds` on this machine and `/sounds` on the Frigate host are the same files - share/mount them, or run this app on the Frigate host. Preview and voice download work regardless.
 
 ## Notes
 
