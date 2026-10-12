@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, readdir
 import { dirname, join } from "node:path";
 
 export interface Settings {
+  app_name: string;
   cameras: string[];
   go2rtc_url: string;
   voice: string;
@@ -23,9 +24,11 @@ export const VOICES_DIR = process.env.VOICES_DIR ?? "/app/voices";
 export const SETTINGS_PATH = process.env.SETTINGS_PATH ?? (existsSync("/data") ? "/data/settings.json" : "./data/settings.json");
 export const PORT = Number(process.env.PORT ?? 5005);
 export const MAX_RECORDING_BYTES = 10 * 1024 * 1024;
+export const ALL_CAMERAS = "*"; // sentinel camera value meaning "every configured camera"
 export const SOUND_EXTENSIONS = [".mp3", ".wav", ".ogg", ".m4a", ".flac"];
 
 const DEFAULTS: Settings = {
+  app_name: "FrigateTTS",
   cameras: ["cam1_hd"],
   go2rtc_url: "http://frigate:1984",
   voice: "en_US-lessac-medium",
@@ -78,6 +81,7 @@ export function saveSettings(data: Settings): void {
 export function publicSettings() {
   const s = loadSettings();
   return {
+    app_name: s.app_name,
     cameras: s.cameras,
     go2rtc_url: s.go2rtc_url,
     voice: s.voice,

@@ -15,6 +15,7 @@ import {
   SOUNDS_DIR,
   MAX_RECORDING_BYTES,
   PORT,
+  ALL_CAMERAS,
 } from "./config.js";
 import {
   convertRecording,
@@ -57,9 +58,16 @@ function sendJson(res: ServerResponse, code: number, obj: unknown): void {
   send(res, code, JSON.stringify(obj));
 }
 
+function resolveCameras(cam: string | undefined, s: Settings): string[] {
+  if (cam === ALL_CAMERAS) return s.cameras;
+  const target = cam || s.cameras[0];
+  if (!s.cameras.includes(target)) throw new Error("unknown camera");
+  return [target];
+}
+
 function requireAuth(req: IncomingMessage, res: ServerResponse): boolean {
   if (checkAuth(req.headers.authorization)) return true;
-  res.writeHead(401, { "WWW-Authenticate": 'Basic realm="Camera Speaker"', "Content-Type": "application/json" });
+  res.writeHead(401, { "WWW-Authenticate": `Basic realm="${loadSettings().app_name}"`, "Content-Type": "application/json" });
   res.end('{"error":"authentication required"}');
   return false;
 }
@@ -67,34 +75,33 @@ function requireAuth(req: IncomingMessage, res: ServerResponse): boolean {
 async function handleSay(body: any): Promise<unknown> {
   const s = loadSettings();
   const text = String(body.text ?? "").trim().slice(0, 500);
-  const cam = body.cam || s.cameras[0];
   const speed = Math.min(Math.max(Number(body.speed ?? 1), 0.5), 2.0);
   if (!text) throw new Error("empty text");
-  if (!s.cameras.includes(cam)) throw new Error("unknown camera");
+  const cams = resolveCameras(body.cam, s);
   checkRateLimit();
   const t0 = Date.now();
   await synthesize(text, soundPath("tts.wav"), speed, s.voice, s.pad_seconds, s.tail_seconds);
-  await play(cam, "tts.wav", s.go2rtc_url);
-  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+  await Promise.all(cams.map((cam) => play(cam, "tts.wav", s.go2rtc_url)));
+  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10, cameras: cams };
 }
 
 async function handleTalk(cam: string | undefined, data: Buffer): Promise<unknown> {
   const s = loadSettings();
-  if (!cam || !s.cameras.includes(cam)) throw new Error("unknown camera");
+  const cams = resolveCameras(cam, s);
   if (data.length === 0) throw new Error("recording is empty or too large");
   checkRateLimit();
   const t0 = Date.now();
   await convertRecording(data, soundPath("mic.wav"), s.pad_seconds, s.tail_seconds);
-  await play(cam, "mic.wav", s.go2rtc_url);
-  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+  await Promise.all(cams.map((cam) => play(cam, "mic.wav", s.go2rtc_url)));
+  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10, cameras: cams };
 }
 
 async function handleLiveStart(cam: string | undefined): Promise<unknown> {
   const s = loadSettings();
-  if (!cam || !s.cameras.includes(cam)) throw new Error("unknown camera");
+  const cams = resolveCameras(cam, s);
   checkRateLimit();
-  const token = await startLive(cam, s.go2rtc_url);
-  return { ok: true, token };
+  const token = await startLive(cams, s.go2rtc_url);
+  return { ok: true, token, cameras: cams };
 }
 
 async function handleLiveChunk(token: string | undefined, data: Buffer): Promise<unknown> {
@@ -112,17 +119,17 @@ async function handleLiveStop(token: string | undefined): Promise<unknown> {
 async function handlePlaySound(body: any): Promise<unknown> {
   const s = loadSettings();
   const filename = String(body.file ?? "").trim();
-  const cam = body.cam || s.cameras[0];
   if (!listSounds().includes(filename)) throw new Error("unknown sound file");
-  if (!s.cameras.includes(cam)) throw new Error("unknown camera");
+  const cams = resolveCameras(body.cam, s);
   checkRateLimit();
   const t0 = Date.now();
-  await play(cam, filename, s.go2rtc_url);
-  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+  await Promise.all(cams.map((cam) => play(cam, filename, s.go2rtc_url)));
+  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10, cameras: cams };
 }
 
 function handleSaveSettings(body: any): unknown {
   const s: Settings = { ...loadSettings() };
+  if (body.app_name) s.app_name = String(body.app_name).trim().slice(0, 40);
   if (body.go2rtc_url) s.go2rtc_url = String(body.go2rtc_url).trim();
   if (Array.isArray(body.cameras)) {
     const cams = body.cameras.map((c: unknown) => String(c).trim()).filter(Boolean);
@@ -256,7 +263,7 @@ async function main(): Promise<void> {
       if (!res.headersSent) sendJson(res, 500, { ok: false, error: String(e) });
     });
   });
-  server.listen(PORT, "0.0.0.0", () => console.log(`Camera Speaker on http://0.0.0.0:${PORT}`));
+  server.listen(PORT, "0.0.0.0", () => console.log(`${loadSettings().app_name} on http://0.0.0.0:${PORT}`));
 }
 
 main();

@@ -9,9 +9,14 @@ export const LIVE_RATE = 16000;
 const IDLE_TIMEOUT_MS = 20_000;
 const OPEN_RETRY_MS = 8000;
 
-interface LiveSession {
+interface Pipe {
+  cam: string;
   fd: number | null;
   fifoPath: string;
+}
+
+interface LiveSession {
+  pipes: Pipe[];
   last: number;
 }
 
@@ -60,68 +65,70 @@ function openNonBlocking(path: string): Promise<number | null> {
   });
 }
 
-export function cleanupLive(token: string): void {
-  const sess = sessions.get(token);
-  if (!sess) return;
-  sessions.delete(token);
-  if (sess.fd !== null) close(sess.fd, () => {});
+function closePipe(pipe: Pipe): void {
+  if (pipe.fd !== null) close(pipe.fd, () => {});
   try {
-    unlinkSync(sess.fifoPath);
+    unlinkSync(pipe.fifoPath);
   } catch {
     // already gone
   }
 }
 
-export async function startLive(cam: string, go2rtcUrl: string): Promise<string> {
-  const token = randomBytes(8).toString("hex");
-  const fifoPath = join(SOUNDS_DIR, `ptt_live_${token}.wav`);
-  execFileSync("mkfifo", [fifoPath]);
-  sessions.set(token, { fd: null, fifoPath, last: Date.now() });
-
-  await play(cam, fifoPath.split("/").pop()!, go2rtcUrl);
-
-  const fd = await openNonBlocking(fifoPath);
-  if (fd === null) {
-    cleanupLive(token);
-    throw new Error("go2rtc never opened the audio pipe");
-  }
+export function cleanupLive(token: string): void {
   const sess = sessions.get(token);
-  if (!sess) {
-    // session was cancelled while we were waiting for a reader
-    close(fd, () => {});
-    try {
-      unlinkSync(fifoPath);
-    } catch {
-      // already gone
-    }
-    throw new Error("session was cancelled");
+  if (!sess) return;
+  sessions.delete(token);
+  for (const pipe of sess.pipes) closePipe(pipe);
+}
+
+export async function startLive(cams: string[], go2rtcUrl: string): Promise<string> {
+  const token = randomBytes(8).toString("hex");
+  const pipes: Pipe[] = cams.map((cam, i) => ({
+    cam,
+    fd: null,
+    fifoPath: join(SOUNDS_DIR, `ptt_live_${token}_${i}.wav`),
+  }));
+  for (const pipe of pipes) execFileSync("mkfifo", [pipe.fifoPath]);
+  sessions.set(token, { pipes, last: Date.now() });
+
+  try {
+    await Promise.all(pipes.map((pipe) => play(pipe.cam, pipe.fifoPath.split("/").pop()!, go2rtcUrl)));
+
+    const fds = await Promise.all(pipes.map((pipe) => openNonBlocking(pipe.fifoPath)));
+    const sess = sessions.get(token);
+    if (!sess) throw new Error("session was cancelled"); // cancelled while waiting for readers
+    if (fds.some((fd) => fd === null)) throw new Error("go2rtc never opened the audio pipe for one or more cameras");
+
+    fds.forEach((fd, i) => (sess.pipes[i].fd = fd));
+    const header = wavStreamingHeader(LIVE_RATE);
+    await Promise.all(fds.map((fd) => writeFd(fd as number, header)));
+    return token;
+  } catch (e) {
+    cleanupLive(token);
+    throw e;
   }
-  sess.fd = fd;
-  await writeFd(fd, wavStreamingHeader(LIVE_RATE));
-  return token;
 }
 
 export async function feedLive(token: string, chunk: Buffer): Promise<void> {
   const sess = sessions.get(token);
-  if (!sess || sess.fd === null) throw new Error("no active session for that token");
+  if (!sess || sess.pipes.some((p) => p.fd === null)) throw new Error("no active session for that token");
   let pcm: Buffer;
   try {
     pcm = await decodeChunkToPcm(chunk, LIVE_RATE);
   } catch {
     return; // a dropped segment shouldn't kill the whole session
   }
-  await writeFd(sess.fd, pcm);
+  await Promise.all(sess.pipes.map((p) => writeFd(p.fd as number, pcm)));
   sess.last = Date.now();
 }
 
 export async function stopLive(token: string, tailSeconds: number): Promise<void> {
   const sess = sessions.get(token);
-  if (sess && sess.fd !== null) {
-    try {
-      await writeFd(sess.fd, Buffer.alloc(Math.round(LIVE_RATE * tailSeconds * 2)));
-    } catch {
-      // closing anyway
-    }
+  if (sess) {
+    const silence = Buffer.alloc(Math.round(LIVE_RATE * tailSeconds * 2));
+    await Promise.all(
+      sess.pipes.map((p) => (p.fd !== null ? writeFd(p.fd, silence).catch(() => {}) : Promise.resolve()))
+    );
   }
   cleanupLive(token);
 }

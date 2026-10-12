@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     user: "1000:100"  # owner of the sounds dir on the host
     ports:
-      - "5005:5005"
+      - "${HTTP_PORT:-5005}:5005"
     volumes:
       - /home/ian/sounds:/sounds
       - ./voices:/app/voices  # drop extra Piper voice models (.onnx + .onnx.json) here
@@ -20,10 +20,15 @@ services:
     depends_on:
       - frigate-tts
     ports:
-      - "8444:8444"  # https://<host>:8444 - needed for the mic buttons off localhost
+      - "${HTTPS_PORT:-8444}:${HTTPS_PORT:-8444}"  # needed for the mic buttons off localhost
+    environment:
+      - HTTPS_PORT=${HTTPS_PORT:-8444}
+      - CERT_FILE=${CERT_FILE}
+      - KEY_FILE=${KEY_FILE}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CADDYFILE:-./Caddyfile.selfsigned}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+      # - ./certs:/certs:ro  # uncomment if using Caddyfile.custom-cert with your own certificate
     networks:
       - frigate
 

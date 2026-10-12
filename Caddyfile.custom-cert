@@ -1,0 +1,4 @@
+:{$HTTPS_PORT} {
+	tls {$CERT_FILE} {$KEY_FILE}
+	reverse_proxy frigate-tts:5005
+}

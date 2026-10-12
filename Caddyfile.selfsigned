@@ -3,7 +3,7 @@
 		ask http://frigate-tts:5005/caddy-ask
 	}
 }
-:8444 {
+:{$HTTPS_PORT} {
 	tls internal {
 		on_demand
 	}

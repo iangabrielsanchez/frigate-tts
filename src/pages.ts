@@ -1,6 +1,8 @@
+import { ALL_CAMERAS } from "./config.js";
+
 export const MAIN_PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Camera Speaker</title>
+<title>FrigateTTS</title>
 <style>
 :root{--bg:#f6f6f4;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#ddd;--acc:#2f6fed}
 @media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1e;--fg:#eee;--mute:#999;--line:#333;--acc:#5b8dff}}
@@ -30,7 +32,7 @@ summary{cursor:pointer;color:var(--mute);font-size:14px}
 .soundrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .soundrow button{width:auto;padding:6px 14px;font-size:13px}
 </style></head><body><main>
-<div class="top"><h1>&#128226; Camera Speaker</h1><a class="gear" href="/settings" title="Settings">&#9881;</a></div>
+<div class="top"><h1>&#128226; <span id="appName">FrigateTTS</span></h1><a class="gear" href="/settings" title="Settings">&#9881;</a></div>
 <textarea id="t" placeholder="Type something to say... (Ctrl+Enter to send)"></textarea>
 <div class="chips presets" id="presets"></div>
 <div class="row">
@@ -86,7 +88,7 @@ async function say(presetText){
  $('go').disabled=true;$('status').textContent='Generating and sending...';
  try{const r=await fetch('/say',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({text,cam:$('cam').value,speed:+$('spd').value})});
-  const j=await r.json();$('status').textContent=j.ok?('Playing on '+$('cam').value+' ('+j.seconds+'s)'):'Error: '+j.error;
+  const j=await r.json();$('status').textContent=j.ok?('Playing on '+j.cameras.join(', ')+' ('+j.seconds+'s)'):'Error: '+j.error;
   if(j.ok){if(presetText===undefined)remember(text);try{localStorage.setItem('cam',$('cam').value)}catch(e){}}
  }catch(e){$('status').textContent='Error: '+e}
  syncButtons();
@@ -140,19 +142,19 @@ async function sendRecordTalk(){
  const blob=new Blob(chunks,{type:rec.mimeType}),cam=$('cam').value;
  ptt.disabled=true;$('status').textContent='Sending...';
  try{const r=await fetch('/talk?cam='+encodeURIComponent(cam),{method:'POST',headers:{'Content-Type':blob.type||'application/octet-stream'},body:blob});
-  const j=await r.json();$('status').textContent=j.ok?('Playing on '+cam+' ('+j.seconds+'s)'):'Error: '+j.error;
+  const j=await r.json();$('status').textContent=j.ok?('Playing on '+j.cameras.join(', ')+' ('+j.seconds+'s)'):'Error: '+j.error;
   if(j.ok)try{localStorage.setItem('cam',cam)}catch(_){}
  }catch(err){$('status').textContent='Error: '+err}
  ptt.disabled=false;
 }
 
 async function startLiveTalk(){
- liveCam=$('cam').value;ptt.textContent='Connecting...';
+ ptt.textContent='Connecting...';
  try{
-  const r=await fetch('/talk-live/start?cam='+encodeURIComponent(liveCam),{method:'POST'});
+  const r=await fetch('/talk-live/start?cam='+encodeURIComponent($('cam').value),{method:'POST'});
   const j=await r.json();
   if(!j.ok){$('status').textContent='Error: '+j.error;return stopTalk()}
-  liveToken=j.token;
+  liveToken=j.token;liveCam=j.cameras.join(', ');
  }catch(err){$('status').textContent='Error: '+err;return stopTalk()}
  if(!pressed)return stopLiveTalk(); // released while connecting
  ptt.textContent='Live... release to stop';
@@ -208,7 +210,7 @@ async function playSound(name,btn){
   const r=await fetch('/api/sounds/play',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({file:name,cam:$('cam').value})});
   const j=await r.json();
-  $('status').textContent=j.ok?('Playing '+name+' on '+$('cam').value+' ('+j.seconds+'s)'):'Error: '+j.error;
+  $('status').textContent=j.ok?('Playing '+name+' on '+j.cameras.join(', ')+' ('+j.seconds+'s)'):'Error: '+j.error;
  }catch(e){$('status').textContent='Error: '+e}
  btn.disabled=false;
 }
@@ -218,8 +220,10 @@ $('soundboard').addEventListener('toggle',function(){if(this.open&&!soundboardLo
 (async function init(){
  try{
   cfg=await (await fetch('/api/settings')).json();
-  $('cam').innerHTML=cfg.cameras.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
-  try{const c=localStorage.getItem('cam');if(c&&cfg.cameras.includes(c))$('cam').value=c}catch(e){}
+  document.title=cfg.app_name;$('appName').textContent=cfg.app_name;
+  $('cam').innerHTML=cfg.cameras.map(c=>'<option value="'+c+'">'+c+'</option>').join('')
+    +(cfg.cameras.length>1?'<option value="${ALL_CAMERAS}">All cameras</option>':'');
+  try{const c=localStorage.getItem('cam');if(c&&(cfg.cameras.includes(c)||c==='${ALL_CAMERAS}'))$('cam').value=c}catch(e){}
   draw();renderPresets();
  }catch(e){$('status').textContent='Could not load settings: '+e}
 })();
@@ -227,7 +231,7 @@ $('soundboard').addEventListener('toggle',function(){if(this.open&&!soundboardLo
 
 export const SETTINGS_PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Camera Speaker - Settings</title>
+<title>FrigateTTS - Settings</title>
 <style>
 :root{--bg:#f6f6f4;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#ddd;--acc:#2f6fed;--ok:#1f9254;--err:#d93a3a}
 @media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1e;--fg:#eee;--mute:#999;--line:#333;--acc:#5b8dff}}
@@ -257,6 +261,13 @@ audio{width:100%;margin-top:8px}
 #save{width:100%;padding:14px;margin-top:4px}
 </style></head><body><main>
 <div class="top"><h1>&#9881; Settings</h1><a href="/">&lt;- Back</a></div>
+
+<section>
+ <h2>General</h2>
+ <label>App name</label>
+ <input id="app_name" maxlength="40">
+ <div class="note">Shown as the page title and on the main page.</div>
+</section>
 
 <section>
  <h2>Cameras and connection</h2>
@@ -332,6 +343,8 @@ function setMsg(el,text,ok){el.textContent=text;el.className='msg '+(ok?'ok':'er
 
 async function load(){
  const s=await (await fetch('/api/settings')).json();
+ document.title=s.app_name+' - Settings';
+ $('app_name').value=s.app_name;
  $('go2rtc_url').value=s.go2rtc_url;
  $('cameras').value=s.cameras.join(', ');
  $('rate_limit_per_min').value=s.rate_limit_per_min;
@@ -423,6 +436,7 @@ $('disableAuth').onclick=()=>{$('auth_username').value='';$('auth_password').val
 async function saveSettings(){
  setMsg($('saveMsg'),'Saving...',true);
  const body={
+  app_name:$('app_name').value.trim(),
   go2rtc_url:$('go2rtc_url').value.trim(),
   cameras:$('cameras').value.split(',').map(s=>s.trim()).filter(Boolean),
   rate_limit_per_min:+$('rate_limit_per_min').value,
@@ -440,6 +454,7 @@ async function saveSettings(){
   const j=await r.json();
   if(!j.ok)throw new Error(j.error);
   $('auth_password').value='';
+  document.title=body.app_name+' - Settings';
   setMsg($('saveMsg'),'Saved',true);
  }catch(e){setMsg($('saveMsg'),'Error: '+e,false)}
 }

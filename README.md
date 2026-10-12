@@ -1,4 +1,4 @@
-# Camera Speaker
+# frigate-tts
 
 A tiny web app: type text, or hold a button and talk, and it plays through a CCTV camera's speaker via [Frigate](https://frigate.video)'s built-in go2rtc two-way audio.
 
@@ -24,6 +24,7 @@ If `compose.yml`'s `networks.frigate.name` doesn't match Frigate's compose proje
 ## Main page
 
 - Type a message, or tap a quick reply (configured in Settings) to send it immediately.
+- With more than one camera configured, the camera picker also offers "All cameras", which broadcasts to every one of them at once (typed messages, hold-to-talk, and the soundboard all support this).
 - Preview plays the message in your browser, with the same padding it would get on a camera, no camera involved.
 - Hold to talk records (or live-streams, depending on the push-to-talk mode in Settings) your voice to the camera.
 - Soundboard plays any audio file already sitting in your sounds folder (e.g. a pre-made MP3), unmodified.
@@ -41,13 +42,35 @@ If `compose.yml`'s `networks.frigate.name` doesn't match Frigate's compose proje
 
 ## Mic access over HTTPS
 
-Browsers block microphone access on plain HTTP (except on `localhost`), so the hold-to-talk buttons won't work if you open this over plain `http://<lan-ip>:5005`. `compose.yml` includes a small [Caddy](https://caddyserver.com) sidecar that serves the same app over HTTPS on port `8444`, with a self-signed certificate it issues on the fly for whatever hostname or IP you connect with:
+Browsers block microphone access on plain HTTP (except on `localhost`), so the hold-to-talk buttons won't work if you open this over plain `http://<lan-ip>:5005`. `compose.yml` includes a small [Caddy](https://caddyserver.com) sidecar that serves the same app over HTTPS, so:
 
 ```
 https://<host>:8444
 ```
 
 Your browser will warn about the self-signed cert the first time; that's expected, accept it once per device. (If you already reach this over Tailscale or another HTTPS tunnel, you don't need this proxy.)
+
+### Ports and certificate
+
+Both ports, and how the proxy gets its certificate, are set in `.env` (docker compose reads it automatically):
+
+| Variable | Default | |
+|---|---|---|
+| `HTTP_PORT` | `5005` | host port for the plain HTTP app |
+| `HTTPS_PORT` | `8444` | host port for the HTTPS proxy |
+| `CADDYFILE` | `./Caddyfile.selfsigned` | which Caddy config to use |
+
+`Caddyfile.selfsigned` (the default) issues a self-signed certificate on the fly for whatever hostname/IP you connect with; no setup beyond accepting the browser warning once per device.
+
+To use a certificate you already have (from Let's Encrypt, your router, etc.) instead: uncomment the `./certs:/certs:ro` volume line in `compose.yml`, put your cert and key under a local `certs/` folder, and set in `.env`:
+
+```
+CADDYFILE=./Caddyfile.custom-cert
+CERT_FILE=/certs/fullchain.pem
+KEY_FILE=/certs/privkey.pem
+```
+
+Changing any of these needs `docker compose up -d` (not just a restart) to take effect.
 
 ## How it's built
 
