@@ -25,6 +25,7 @@ ENV NODE_ENV=production
 
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+COPY public ./public
 
 EXPOSE 5005
 CMD ["node", "dist/server.js"]

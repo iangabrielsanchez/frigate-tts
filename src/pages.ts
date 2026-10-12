@@ -3,6 +3,12 @@ import { ALL_CAMERAS } from "./config.js";
 export const MAIN_PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FrigateTTS</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#2f6fed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FrigateTTS">
 <style>
 :root{--bg:#f6f6f4;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#ddd;--acc:#2f6fed}
 @media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1e;--fg:#eee;--mute:#999;--line:#333;--acc:#5b8dff}}
@@ -221,17 +227,22 @@ $('soundboard').addEventListener('toggle',function(){if(this.open&&!soundboardLo
  try{
   cfg=await (await fetch('/api/settings')).json();
   document.title=cfg.app_name;$('appName').textContent=cfg.app_name;
+  document.querySelector('meta[name="apple-mobile-web-app-title"]').setAttribute('content',cfg.app_name);
   $('cam').innerHTML=cfg.cameras.map(c=>'<option value="'+c+'">'+c+'</option>').join('')
     +(cfg.cameras.length>1?'<option value="${ALL_CAMERAS}">All cameras</option>':'');
   try{const c=localStorage.getItem('cam');if(c&&(cfg.cameras.includes(c)||c==='${ALL_CAMERAS}'))$('cam').value=c}catch(e){}
   draw();renderPresets();
  }catch(e){$('status').textContent='Could not load settings: '+e}
 })();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script></main></body></html>`;
 
 export const SETTINGS_PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FrigateTTS - Settings</title>
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#2f6fed">
 <style>
 :root{--bg:#f6f6f4;--card:#fff;--fg:#1d1d1b;--mute:#6b6b66;--line:#ddd;--acc:#2f6fed;--ok:#1f9254;--err:#d93a3a}
 @media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1e;--fg:#eee;--mute:#999;--line:#333;--acc:#5b8dff}}

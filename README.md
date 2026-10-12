@@ -29,6 +29,8 @@ If `compose.yml`'s `networks.frigate.name` doesn't match Frigate's compose proje
 - Hold to talk records (or live-streams, depending on the push-to-talk mode in Settings) your voice to the camera.
 - Soundboard plays any audio file already sitting in your sounds folder (e.g. a pre-made MP3), unmodified.
 
+It's an installable PWA: "Add to Home Screen" (iOS Safari) or the install icon in the address bar (Chrome/Edge/Android) gets you an app icon that opens straight to this page, no browser chrome. Needs HTTPS (see below) to install on most platforms. The app's name on the home screen follows the "App name" setting.
+
 ## Settings page
 
 - Cameras and connection: go2rtc URL, with a "Test connection" button that also lists the stream names go2rtc knows about. A rate limit here caps how many camera messages (of any kind) can go out per minute, as a leaky bucket; short bursts are fine, sustained spam isn't.

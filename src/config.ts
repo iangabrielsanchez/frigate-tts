@@ -21,6 +21,7 @@ export interface Settings {
 export const SOUNDS_DIR = process.env.SOUNDS_DIR ?? "/sounds";
 export const FRIGATE_SOUNDS_DIR = process.env.FRIGATE_SOUNDS_DIR ?? "/sounds";
 export const VOICES_DIR = process.env.VOICES_DIR ?? "/app/voices";
+export const PUBLIC_DIR = process.env.PUBLIC_DIR ?? "/app/public";
 export const SETTINGS_PATH = process.env.SETTINGS_PATH ?? (existsSync("/data") ? "/data/settings.json" : "./data/settings.json");
 export const PORT = Number(process.env.PORT ?? 5005);
 export const MAX_RECORDING_BYTES = 10 * 1024 * 1024;

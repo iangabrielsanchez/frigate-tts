@@ -16,6 +16,7 @@ import {
   MAX_RECORDING_BYTES,
   PORT,
   ALL_CAMERAS,
+  PUBLIC_DIR,
 } from "./config.js";
 import {
   convertRecording,
@@ -29,6 +30,20 @@ import {
 } from "./piper.js";
 import { feedLive, startLive, stopLive, sweepLive } from "./live.js";
 import { MAIN_PAGE, SETTINGS_PAGE } from "./pages.js";
+
+// minimal service worker: just enough to satisfy "installable" criteria. No offline caching,
+// since every feature here needs a live connection to the Pi anyway.
+const SERVICE_WORKER = `self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch',()=>{});`;
+
+function sendFile(res: ServerResponse, path: string, contentType: string): void {
+  try {
+    send(res, 200, readFileSync(path), contentType);
+  } catch {
+    send(res, 404, '{"error":"not found"}');
+  }
+}
 
 function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -202,6 +217,30 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // hostname/IP; we're only reachable on the frigate network, so anything goes.
   if (req.method === "GET" && path === "/caddy-ask") {
     return send(res, 200, "ok", "text/plain");
+  }
+
+  // PWA assets: served without auth, since the OS fetches these during install without
+  // carrying any saved credentials.
+  if (req.method === "GET") {
+    if (path === "/manifest.webmanifest") {
+      const name = loadSettings().app_name;
+      return sendJson(res, 200, {
+        name,
+        short_name: name.slice(0, 12),
+        start_url: "/",
+        display: "standalone",
+        background_color: "#f6f6f4",
+        theme_color: "#2f6fed",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+        ],
+      });
+    }
+    if (path === "/sw.js") return send(res, 200, SERVICE_WORKER, "application/javascript");
+    if (path === "/icon-192.png") return sendFile(res, join(PUBLIC_DIR, "icon-192.png"), "image/png");
+    if (path === "/icon-512.png") return sendFile(res, join(PUBLIC_DIR, "icon-512.png"), "image/png");
+    if (path === "/apple-touch-icon.png") return sendFile(res, join(PUBLIC_DIR, "apple-touch-icon.png"), "image/png");
   }
 
   if (!requireAuth(req, res)) return;
