@@ -291,6 +291,9 @@ audio{width:100%;margin-top:8px}
  <label>Rate limit (camera messages per minute, 0 = unlimited)</label>
  <input id="rate_limit_per_min" type="number" step="1" min="0" max="120">
  <div class="note">Protects against a runaway script (or a bored housemate) spamming the camera.</div>
+ <label>Message cache (recent messages kept, 0 = off)</label>
+ <input id="tts_cache_entries" type="number" step="1" min="0" max="200">
+ <div class="note" id="cacheEstimate"></div>
 </section>
 
 <section>
@@ -321,6 +324,10 @@ audio{width:100%;margin-top:8px}
  <h2>Quick replies</h2>
  <label>One phrase per line - shown as buttons on the main page, sent immediately when clicked</label>
  <textarea id="presets" style="min-height:110px"></textarea>
+ <div class="row" style="margin-top:8px"><button class="ghost" id="previewPresets" style="flex:0 0 auto">&#9654; Preview presets</button></div>
+ <div class="note">Plays each reply in your browser in order, using the voice and timing above. Nothing goes to a camera.</div>
+ <audio id="presetAudio" controls style="display:none"></audio>
+ <div class="msg" id="presetMsg"></div>
 </section>
 
 <section>
@@ -361,6 +368,8 @@ async function load(){
  $('go2rtc_url').value=s.go2rtc_url;
  $('cameras').value=s.cameras.join(', ');
  $('rate_limit_per_min').value=s.rate_limit_per_min;
+ $('tts_cache_entries').value=s.tts_cache_entries;
+ cacheAvg=s.cache_avg_bytes||0;updateCacheEstimate();
  $('pad_seconds').value=s.pad_seconds;
  $('tail_seconds').value=s.tail_seconds;
  $('play_chime').checked=s.play_chime;
@@ -405,6 +414,28 @@ $('preview').onclick=async()=>{
  }catch(e){setMsg($('previewMsg'),'Error: '+e,false)}
  syncPreviewBtn();
 };
+$('previewPresets').onclick=async()=>{
+ const list=$('presets').value.split('\\n').map(x=>x.trim()).filter(Boolean);
+ if(!list.length){setMsg($('presetMsg'),'No quick replies to preview.',false);return}
+ const btn=$('previewPresets'),audio=$('presetAudio');
+ btn.disabled=true;
+ try{
+  for(let i=0;i<list.length;i++){
+   setMsg($('presetMsg'),'Generating '+(i+1)+' of '+list.length+': '+list[i],true);
+   const r=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:list[i],voice:$('voice').value,
+      pad_seconds:+$('pad_seconds').value,tail_seconds:+$('tail_seconds').value,play_chime:$('play_chime').checked})});
+   if(!r.ok){const j=await r.json();throw new Error(j.error)}
+   const blob=await r.blob();
+   audio.src=URL.createObjectURL(blob);audio.style.display='block';
+   setMsg($('presetMsg'),'Playing '+(i+1)+' of '+list.length+': '+list[i],true);
+   await new Promise(done=>{audio.onended=done;audio.onerror=done;audio.play().catch(done)});
+  }
+  setMsg($('presetMsg'),'Done, '+list.length+' quick repl'+(list.length===1?'y':'ies')+' previewed.',true);
+ }catch(e){setMsg($('presetMsg'),'Could not preview: '+e,false)}
+ btn.disabled=false;
+};
+
 function syncPreviewBtn(){$('preview').disabled=!$('previewText').value.trim()}
 $('previewText').addEventListener('input',syncPreviewBtn);
 syncPreviewBtn();
@@ -447,6 +478,17 @@ $('moreVoices').addEventListener('toggle',function(){if(this.open&&!catalog.leng
 
 $('disableAuth').onclick=()=>{$('auth_username').value='';$('auth_password').value='';saveSettings()};
 
+let cacheAvg=0;
+function fmtBytes(n){if(n>=1048576)return (n/1048576).toFixed(1)+' MB';if(n>=1024)return Math.round(n/1024)+' KB';return n+' B'}
+function updateCacheEstimate(){
+ const n=Math.max(0,+$('tts_cache_entries').value||0);
+ const avg=cacheAvg||307200;
+ $('cacheEstimate').textContent=n===0
+  ? 'Cache is off, so every message is synthesised from scratch.'
+  : 'Keeps about '+fmtBytes(n*avg)+' on disk, roughly '+fmtBytes(avg)+' per message'+(cacheAvg?'':' (estimated until the cache fills)')+'.';
+}
+$('tts_cache_entries').addEventListener('input',updateCacheEstimate);
+
 async function saveSettings(){
  setMsg($('saveMsg'),'Saving...',true);
  const body={
@@ -454,6 +496,7 @@ async function saveSettings(){
   go2rtc_url:$('go2rtc_url').value.trim(),
   cameras:$('cameras').value.split(',').map(s=>s.trim()).filter(Boolean),
   rate_limit_per_min:+$('rate_limit_per_min').value,
+  tts_cache_entries:+$('tts_cache_entries').value,
   voice:$('voice').value,
   pad_seconds:+$('pad_seconds').value,
   tail_seconds:+$('tail_seconds').value,

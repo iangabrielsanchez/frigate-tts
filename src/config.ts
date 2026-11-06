@@ -14,6 +14,7 @@ export interface Settings {
   ptt_mode: "record" | "live";
   presets: string[];
   rate_limit_per_min: number;
+  tts_cache_entries: number;
   auth_username: string;
   auth_salt: string;
   auth_hash: string;
@@ -47,6 +48,7 @@ const DEFAULTS: Settings = {
     "Can you come back later?",
   ],
   rate_limit_per_min: 10,
+  tts_cache_entries: 5,
   auth_username: "",
   auth_salt: "",
   auth_hash: "",
@@ -96,6 +98,7 @@ export function publicSettings() {
     ptt_mode: s.ptt_mode,
     presets: s.presets,
     rate_limit_per_min: s.rate_limit_per_min,
+    tts_cache_entries: s.tts_cache_entries,
     auth_username: s.auth_username,
   };
 }

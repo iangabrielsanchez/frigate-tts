@@ -1,5 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -29,6 +29,9 @@ import {
   testGo2rtc,
 } from "./piper.js";
 import { feedLive, startLive, stopLive, sweepLive } from "./live.js";
+import { avgBytes, cacheKey, getCached, putCached, setCapacity } from "./ttscache.js";
+import { PRESET_SPEED, getPreset, presetKey, prunePresets, putPreset } from "./presetaudio.js";
+import { cacheText } from "./normalize.js";
 import { MAIN_PAGE, SETTINGS_PAGE } from "./pages.js";
 
 // minimal service worker: just enough to satisfy "installable" criteria. No offline caching,
@@ -87,6 +90,43 @@ function requireAuth(req: IncomingMessage, res: ServerResponse): boolean {
   return false;
 }
 
+// One synthesis at a time: warming presets must not compete with a live message
+// on the Pi.
+let synthChain: Promise<unknown> = Promise.resolve();
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const next = synthChain.then(fn, fn);
+  synthChain = next.catch(() => undefined);
+  return next;
+}
+
+async function warmPresets(): Promise<void> {
+  const s = loadSettings();
+  const texts = s.presets.map((p) => String(p).trim()).filter(Boolean);
+  const keys = new Map(texts.map((t) => [t, presetKey(t, s)]));
+  const pruned = prunePresets(new Set(keys.values()));
+  if (pruned) console.log(`pruned ${pruned} stale preset rendering${pruned === 1 ? "" : "s"}`);
+
+  let rendered = 0;
+  for (const [text, key] of keys) {
+    if (getPreset(key)) continue;
+    const tmp = join(tmpdir(), `preset-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`);
+    try {
+      await serialized(() => synthesize(text, tmp, PRESET_SPEED, s.voice, s.pad_seconds, s.tail_seconds, s.play_chime));
+      putPreset(key, tmp);
+      rendered++;
+    } catch (e) {
+      console.error(`could not pre-render preset "${text.slice(0, 40)}":`, e);
+    } finally {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // best effort
+      }
+    }
+  }
+  if (rendered) console.log(`pre-rendered ${rendered} quick repl${rendered === 1 ? "y" : "ies"}`);
+}
+
 async function handleSay(body: any): Promise<unknown> {
   const s = loadSettings();
   const text = String(body.text ?? "").trim().slice(0, 500);
@@ -95,9 +135,27 @@ async function handleSay(body: any): Promise<unknown> {
   const cams = resolveCameras(body.cam, s);
   checkRateLimit();
   const t0 = Date.now();
-  await synthesize(text, soundPath("tts.wav"), speed, s.voice, s.pad_seconds, s.tail_seconds, s.play_chime);
+  const target = soundPath("tts.wav");
+  const isPreset = speed === PRESET_SPEED && s.presets.some((p) => cacheText(String(p)) === cacheText(text));
+  const key = isPreset
+    ? presetKey(text, s, speed)
+    : cacheKey({ text, voice: s.voice, speed, pad: s.pad_seconds, tail: s.tail_seconds, chime: s.play_chime });
+  const source = isPreset ? getPreset(key) : getCached(key);
+  if (source) {
+    copyFileSync(source, target);
+  } else {
+    await serialized(() => synthesize(text, target, speed, s.voice, s.pad_seconds, s.tail_seconds, s.play_chime));
+    if (isPreset) putPreset(key, target);
+    else putCached(key, target);
+  }
   await Promise.all(cams.map((cam) => play(cam, "tts.wav", s.go2rtc_url)));
-  return { ok: true, seconds: Math.round((Date.now() - t0) / 100) / 10, cameras: cams };
+  return {
+    ok: true,
+    seconds: Math.round((Date.now() - t0) / 100) / 10,
+    cameras: cams,
+    cached: Boolean(source),
+    preset: isPreset,
+  };
 }
 
 async function handleTalk(cam: string | undefined, data: Buffer): Promise<unknown> {
@@ -162,6 +220,9 @@ function handleSaveSettings(body: any): unknown {
   if (body.rate_limit_per_min !== undefined) {
     s.rate_limit_per_min = Math.max(0, Math.min(120, Math.round(Number(body.rate_limit_per_min))));
   }
+  if (body.tts_cache_entries !== undefined) {
+    s.tts_cache_entries = Math.max(0, Math.min(200, Math.round(Number(body.tts_cache_entries))));
+  }
   if (body.auth_username !== undefined) {
     const username = String(body.auth_username).trim();
     const password = String(body.auth_password ?? "");
@@ -179,6 +240,8 @@ function handleSaveSettings(body: any): unknown {
     }
   }
   saveSettings(s);
+  setCapacity(s.tts_cache_entries);
+  void warmPresets().catch((e) => console.error("preset warm failed:", e));
   return { ok: true };
 }
 
@@ -250,7 +313,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === "GET") {
     if (path === "/") return send(res, 200, MAIN_PAGE, "text/html; charset=utf-8");
     if (path === "/settings") return send(res, 200, SETTINGS_PAGE, "text/html; charset=utf-8");
-    if (path === "/api/settings") return sendJson(res, 200, publicSettings());
+    if (path === "/api/settings")
+      return sendJson(res, 200, { ...publicSettings(), cache_avg_bytes: avgBytes() });
     if (path === "/api/voices") return sendJson(res, 200, listVoices());
     if (path === "/api/sounds") return sendJson(res, 200, listSounds());
     if (path === "/api/catalog") {
@@ -296,7 +360,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
 async function main(): Promise<void> {
   await ensureDefaultVoice();
-  loadSettings();
+  const boot = loadSettings();
+  setCapacity(boot.tts_cache_entries);
+  void warmPresets().catch((e) => console.error("preset warm failed:", e));
   setInterval(sweepLive, 10_000);
   const server = createServer((req, res) => {
     route(req, res).catch((e) => {
