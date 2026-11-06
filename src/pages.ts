@@ -29,6 +29,9 @@ button.ghost{background:var(--card);color:var(--fg);border:1px solid var(--line)
 .chips button{width:auto;background:var(--card);color:var(--fg);border:1px solid var(--line);font-weight:400;padding:6px 12px;font-size:14px}
 .chips.presets{margin-top:8px}
 .chips.presets button{border-color:var(--acc);color:var(--acc)}
+.chipgroup{display:inline-flex;align-items:stretch}
+.chipgroup button{border-radius:10px 0 0 10px}
+.chipgroup button.chipplay{width:auto;border-left:0;border-radius:0 10px 10px 0;padding:6px 9px;font-size:11px}
 #ptt{margin-top:10px;padding:22px;background:var(--card);color:var(--fg);border:2px solid var(--line);
  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 #ptt.on{background:#d93a3a;border-color:#d93a3a;color:#fff}
@@ -72,9 +75,13 @@ function draw(){
 function renderPresets(){
  $('presets').innerHTML='';
  (cfg.presets||[]).forEach(p=>{
+  const g=document.createElement('span');g.className='chipgroup';
   const b=document.createElement('button');b.textContent=p;
   b.onclick=()=>say(p);
-  $('presets').append(b);
+  const v=document.createElement('button');v.className='chipplay';v.innerHTML='&#9654;';
+  v.title='Preview only, nothing is sent to a camera';
+  v.onclick=()=>preview(p);
+  g.append(b,v);$('presets').append(g);
  });
 }
 function remember(text){
@@ -101,8 +108,8 @@ async function say(presetText){
 }
 $('go').onclick=()=>say();$('t').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))say()};
 
-async function preview(){
- const text=$('t').value.trim();if(!text)return;
+async function preview(presetText){
+ const text=(presetText!==undefined?presetText:$('t').value).trim();if(!text)return;
  $('preview').disabled=true;$('status').textContent='Generating preview...';
  try{
   const r=await fetch('/api/preview',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -114,7 +121,7 @@ async function preview(){
  }catch(e){$('status').textContent='Error: '+e}
  syncButtons();
 }
-$('preview').onclick=preview;
+$('preview').onclick=()=>preview();
 
 const ptt=$('ptt'),MAX_MS=60000;
 let pressed=false,rec=null,stream=null,chunks=[],t0=0,maxTimer=0,segTimer=0,liveToken=null,liveCam=null;
